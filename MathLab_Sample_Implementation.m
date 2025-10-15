@@ -1,19 +1,21 @@
 % A basic MATLAB script to demonstrate a simple Polar Code simulation loop.
+% --- REVISED VERSION ---
+% This version uses the core polar coding functions directly to avoid
+% potential versioning issues and to focus on the key components.
 
 % --- 1. Simulation Parameters ---
-K = 50;         % Message length in bits
-E = 128;        % Rate-matched output length
+K = 50;         % Message length in bits (the actual information)
+E = 128;        % Rate-matched output length (the length after encoding)
 EbNo_dB = 2;    % Eb/No in decibels - THIS IS THE SIGNAL QUALITY!
-L = 8;          % Decoder list length - 
+L = 8;          % Decoder list length - A KEY PARAMETER FOR YOU!
 
 % Modulation scheme
 modulation = 'QPSK';
-info = nrDLSCHInfo(K, 1/3); % Using a nominal rate for DLSCH info
+bitsPerSymbol = 2; % For QPSK
 
 % --- Simulation Setup ---
 num_block_errors = 0;
-num_sim_blocks = 100; % Number of blocks to simulate for a quick test
-                      % For real results, this should be much higher (e.g., 10000)
+num_sim_blocks = 1000; % Let's run a few more blocks for a better result
 
 fprintf('Starting simulation for EbNo = %.1f dB\n', EbNo_dB);
 
@@ -22,26 +24,24 @@ for block_idx = 1:num_sim_blocks
     
     % --- Transmitter Side ---
     
-    % Generate a random message (transport block)
-    trBlk = randi([0 1], K, 1);
+    % Generate a random message
+    tx_bits = randi([0 1], K, 1);
     
-    % DLSCH Encoding (includes CRC attachment, segmentation, and Polar encoding)
-    codedTrBlk = nrDLSCH(trBlk, info.Rate, E);
+    % --- Core Polar Encoding Step ---
+    % This is the fundamental function for Polar encoding.
+    encoded_bits = nrPolarEncode(tx_bits, E);
 
     % Modulate
-    symbols = nrSymbolModulate(codedTrBlk, modulation);
+    symbols = nrSymbolModulate(encoded_bits, modulation);
 
     % --- Channel ---
     
     % Calculate noise variance from Eb/No
-    % This conversion depends on the code rate and bits per symbol
-    bitsPerSymbol = 2; % For QPSK
     codeRate = K/E;
     snr_dB = EbNo_dB + 10*log10(codeRate) + 10*log10(bitsPerSymbol);
     noiseVar = 10.^(-snr_dB/10);
 
     % Add Additive White Gaussian Noise (AWGN)
-    % This is the simplest channel model.
     rx_symbols = awgn(symbols, snr_dB, 'measured');
 
     % --- Receiver Side ---
@@ -49,13 +49,15 @@ for block_idx = 1:num_sim_blocks
     % Demodulate - get Log-Likelihood Ratios (LLRs)
     llrs = nrSymbolDemodulate(rx_symbols, modulation, noiseVar);
 
-    % DLSCH Decoding (the core part for you)
-    % This function performs rate recovery and then Polar decoding.
-    % The 'L' parameter is passed to the underlying Polar decoder.
-    [decTrBlk, blk_err] = nrDLSCHDecode(llrs, info, E, L);
+    % --- Core Polar Decoding Step ---
+    % This is the fundamental function for Polar decoding.
+    % We tell it the expected message length (K), the input length (E),
+    % and the list size (L) to use.
+    rx_bits = nrPolarDecode(llrs, K, E, L);
 
     % --- 3. Tally Errors ---
-    if blk_err
+    % Check if the decoded bits are different from the transmitted ones.
+    if any(rx_bits ~= tx_bits)
         num_block_errors = num_block_errors + 1;
     end
     
@@ -71,3 +73,4 @@ fprintf('Decoder List Size (L): %d\n', L);
 fprintf('Total Blocks Simulated: %d\n', num_sim_blocks);
 fprintf('Blocks in Error: %d\n', num_block_errors);
 fprintf('Block Error Rate (BLER): %.4f\n', BLER);
+
