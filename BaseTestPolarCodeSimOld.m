@@ -13,10 +13,10 @@ rng('default');
 % -- Code Configuration
 K = 54;         % Message length in bits, including CRC (e.g., 30 info + 24 CRC) [6, 8]
 E = 124;        % Rate-matched output length in bits [6, 8]
-L = 16;          % SCL decoder list size, a power of two [1, 2, 3, 4][6, 8]
+L = 8;          % SCL decoder list size, a power of two [1, 2, 3, 4][6, 8]
 
 % -- Link Configuration
-linkDir = 'UL'; % 'DL' for Downlink (PDCCH) or 'UL' for Uplink (PUCCH)
+linkDir = 'DL'; % 'DL' for Downlink (PDCCH) or 'UL' for Uplink (PUCCH)
 modulation = 'QPSK'; % Modulation scheme for control channels [6]
 EbNo = -4:0.5:6;     % Eb/No range in dB to sweep for BLER curve
 
