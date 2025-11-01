@@ -1,28 +1,26 @@
 % A Comprehensive 5G NR Polar Code Simulation in MATLAB
 % This script models a baseline PDCCH link over an AWGN channel
-% to evaluate Block Error Rate (BLER) performance
+% to evaluate Block Error Rate (BLER) performance.
 %
-% MODIFIED TO SWEEP MULTIPLE SCL LIST SIZES (L)
-
-% Clear workspace and command window, seed the random number generator for repeatability
-clear; clc;
+% This script runs BOTH Task 1 (BLER vs. Eb/No) and Task 2 (Analysis)
+%
+% Clear workspace and command window, seed the random number generator
+clear; close all; clc;
 rng('default');
-%%
+
 % =========================================================================
 % SECTION 1: MASTER SIMULATION PARAMETERS
 % =========================================================================
-
 % -- Code Configuration
 K = 54;         % Message length in bits, including CRC (e.g., 30 info + 24 CRC)
 E = 124;        % Rate-matched output length in bits
-
 % -- List Sizes to Sweep
 L_vec = [1, 2, 4, 8, 16, 32]; % Vector of SCL decoder list sizes to test
 
 % -- Link Configuration
 linkDir = 'DL'; % 'DL' for Downlink (PDCCH) or 'UL' for Uplink (PUCCH)
 modulation = 'QPSK'; % Modulation scheme for control channels
-EbNo = -4:0.5:6;     % Eb/No range in dB to sweep for BLER curve
+EbNo = -3:0.5:5;     % Eb/No range in dB to sweep for BLER curve
 
 % -- Simulation Control
 maxNumFrames = 5000;   % Maximum number of frames to simulate at each Eb/No point
@@ -32,12 +30,10 @@ minFrameErrors = 100;   % Minimum number of frame errors to collect for statisti
 bler_results = zeros(length(L_vec), length(EbNo)); % 2D array for BLER
 legend_entries = cell(1, length(L_vec)); % For storing plot legend strings
 
-%%
 % =========================================================================
 % SECTION 2: DERIVED PARAMETERS (based on Link Direction)
 % =========================================================================
 % These parameters are set according to the 3GPP standard for Polar codes
-
 if strcmpi(linkDir,'DL')
     % Downlink (PDCCH) specific parameters
     crcPoly = '24C';      % CRC polynomial for DCI
@@ -54,10 +50,10 @@ else % Uplink
     iBIL = true;          % Coded-bit interleaving is enabled for uplink
 end
 
-%%
 % =========================================================================
-% SECTION 3: SIMULATION PROCESSING LOOP
+% SECTION 3: SIMULATION PROCESSING LOOP (Task 1)
 % =========================================================================
+fprintf('===== STARTING TASK 1: BLER vs. Eb/No Simulation =====\n\n');
 
 % Outer loop to iterate over each List Size
 for i_L = 1:length(L_vec)
@@ -91,38 +87,25 @@ for i_L = 1:length(L_vec)
             % -----------------------------------------------------------------
             % TRANSMITTER
             % -----------------------------------------------------------------
-            % 1. Generate random message bits
             msg = randi([0 1], K-crcLen, 1);
-            
-            % 2. Attach CRC
             msg_crc = nrCRCEncode(msg, crcPoly);
-            
-            % 3. Polar Encode and Rate Match
             rateMatchedBits = nrPolarEncode(msg_crc, E, nMax, iIL);
-            
-            % 4. Modulate
             modulatedSymbols = nrSymbolModulate(rateMatchedBits, modulation);
             
             % -----------------------------------------------------------------
             % CHANNEL
             % -----------------------------------------------------------------
-            % 6. Pass through AWGN channel
             receivedSymbols = channel(modulatedSymbols);
             
             % -----------------------------------------------------------------
             % RECEIVER
             % -----------------------------------------------------------------
-            % 7. Soft Demodulate to get LLRs
             rxLLRs = nrSymbolDemodulate(receivedSymbols, modulation, noiseVar);
-            
-            % 8. Polar Decode (CA-SCL decoder, includes rate recovery)
-            % *** MODIFICATION: Use the current loop variable 'L' ***
             decodedBits = nrPolarDecode(rxLLRs, K, E, L, nMax, iIL, crcLen);
             
             % -----------------------------------------------------------------
             % ERROR CALCULATION
             % -----------------------------------------------------------------
-            % 10. Check for a block error
             if any(decodedBits ~= msg_crc)
                 errorCount = errorCount + 1;
             end
@@ -140,33 +123,67 @@ for i_L = 1:length(L_vec)
     
 end % end L_vec loop
 
-%%
-% =========================================================================
-% SECTION 4: PLOT RESULTS
-% =========================================================================
-figure;
-hold on; % Allow multiple lines to be plotted on the same axes
 
-% Define markers for the different plots
-markers = {'-o', '-s', '-^', '-d', '-v', '-x'};
+% =========================================================================
+% SECTION 4: TASK 2 ANALYSIS & PLOT (Cell-Edge Trade-off)
+% =========================================================================
+fprintf('===== STARTING TASK 2: Power vs. Complexity Analysis =====\n');
 
-% Loop through each list size result and plot it
+% -- Analysis Parameters
+target_bler = 0.01; % 1% BLER reliability target
+required_ebno = zeros(1, length(L_vec)); % Array to store results
+
+% -- Analysis Loop
 for i_L = 1:length(L_vec)
-    % Select marker, wrap around if we have more lines than markers
-    marker_style = markers{mod(i_L-1, length(markers)) + 1};
+    % Find the first index (lowest Eb/No) where BLER is <= target_bler
+    % This finds the *first* point where the line crosses *below* the target
+    idx = find(bler_results(i_L, :) <= target_bler, 1, 'first');
     
-    semilogy(EbNo, bler_results(i_L, :), marker_style, 'LineWidth', 1.5, 'MarkerSize', 6);
+    if ~isempty(idx)
+        % Found an intersection.
+        % A simple approximation is to just take the Eb/No value
+        % A more precise method (linear interpolation) is also possible
+        required_ebno(i_L) = EbNo(idx);
+        fprintf('  L = %d: Target BLER (%.2f) reached at %.1f dB Eb/No\n', L_vec(i_L), target_bler, required_ebno(i_L));
+    else
+        % Never reached the target in our simulated Eb/No range
+        required_ebno(i_L) = NaN; % Store 'Not a Number'
+        fprintf('  L = %d: Never reached target BLER (%.2f) in simulated range.\n', L_vec(i_L), target_bler);
+    end
 end
 
-hold off;
+% --- Plot the Task 2 Bar Chart ---
+figure('Name', 'Task 2: Power vs. Complexity Trade-off (Cell-Edge)'); % Create Figure 2 (a NEW figure window)
+% Create categorical labels for the X-axis
+string_L_vec = string(L_vec); % Convert numbers to strings
+% Create an ORDINAL categorical array to maintain the correct sort order
+x_categories = categorical(string_L_vec, string_L_vec, 'Ordinal', true);
+
+% Replace NaN values with 0 for plotting, so the bar is just 'missing'
+plot_data = required_ebno;
+plot_data(isnan(plot_data)) = 0;
+
+b = bar(x_categories, plot_data);
 grid on;
-xlabel('E_b/N_0 (dB)');
-ylabel('Block Error Rate (BLER)');
+xlabel('Decoder List Size (L)');
+ylabel(sprintf('Required Eb/No (dB) for %.2f BLER', target_bler));
+title('Task 2: Power vs. Complexity Trade-off (Cell-Edge)');
 
-% Add the dynamic legend
-legend(legend_entries, 'Location', 'SouthWest');
+% Add text labels on top of each bar
+xtips = b.XEndPoints;
+ytips = b.YEndPoints;
+% Create labels, replacing 0 (from NaN) with 'N/A'
+labels = strings(1, length(ytips));
+for i = 1:length(ytips)
+    if ytips(i) == 0
+        labels(i) = 'N/A';
+    else
+        labels(i) = string(round(ytips(i), 2));
+    end
+end
 
-% Add a title to describe the simulation parameters
-title(sprintf('Polar Code BLER vs. Eb/No (K=%d, E=%d, %s, %s)', K, E, linkDir, modulation));
+text(xtips, ytips, labels, 'HorizontalAlignment','center', 'VerticalAlignment','bottom', 'FontSize', 10, 'FontWeight', 'bold');
 
-ylim([1e-5 1]); % Set Y-axis limits
+ylim([min(EbNo)-2 max(EbNo)+2]); % Set Y-axis limits dynamically
+
+fprintf('===== TASK 2 ANALYSIS COMPLETE. =====\n');
